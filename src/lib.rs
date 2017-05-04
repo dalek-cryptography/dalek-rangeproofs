@@ -17,7 +17,7 @@ use curve25519_dalek::decaf::vartime;
 
 use curve25519_dalek::constants as dalek_constants;
 
-pub const RANGEPROOF_N: usize = 24;
+pub const RANGEPROOF_N: usize = 40;
 
 struct RangeProof {
     e_0: Scalar,
@@ -264,7 +264,7 @@ mod bench {
     use super::*;
 
     #[bench]
-    fn bench_verify_seven(b: &mut Bencher) {
+    fn verify(b: &mut Bencher) {
         let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
         let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
 
@@ -275,11 +275,11 @@ mod bench {
     }
 
     #[bench]
-    fn bench_prove_seven(b: &mut Bencher) {
+    fn prove(b: &mut Bencher) {
         let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
         let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
 
-        let value = 7;
+        let value = 1666;
         b.iter(|| RangeProof::create_vartime(value, G, &H));
     }
 
