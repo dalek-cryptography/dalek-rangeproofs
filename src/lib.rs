@@ -80,7 +80,6 @@ impl RangeProof {
     ) -> Option<(RangeProof,Scalar)> {
         let v = base3_digits(value);
 
-        println!("{:?}", &v[..]);
         // Check that v is in range: all digits above N should be 0
         for i in RANGEPROOF_N..41 {
             if v[i] != 0 { return None; }
