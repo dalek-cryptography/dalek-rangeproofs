@@ -243,11 +243,16 @@ mod tests {
         let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
         let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
 
-        let value = 8;
+        let value = 4;
         let (proof, blinding) = RangeProof::create_vartime(value, G, &H).unwrap();
 
         let C_option = proof.verify(G, &H);
         assert!(C_option.is_some());
+
+        let C = C_option.unwrap();
+        let C_hat = &(G * &blinding) + &(&H * &Scalar::from_u64(value));
+
+        assert_eq!(C.compress(), C_hat.compress());
     }
 }
 
