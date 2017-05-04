@@ -41,26 +41,27 @@ impl RangeProof {
         let mut e_0_hash = Sha512::default();
         let mut C = DecafPoint::identity();
 
+        let mut mi_H = H.basepoint();
+
         for i in 0..RANGEPROOF_N {
-            points[2] = self.C[i];
+            let Ci_minus_miH = &self.C[i] - &mi_H;
+            let P = vartime::k_fold_scalar_mult(&[self.s_1[i], -&self.e_0],
+                                                &[G.basepoint(), Ci_minus_miH]);
+            let ei_1 = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
 
-            scalars[0] = self.s_1[i]; 
-            scalars[1] = &self.e_0 * &POWERS_OF_THREE[i];
-            scalars[2] = -&self.e_0;
-            // P = s_1[i]*G + e_0*m^i*H - e_0*C[i] 
-            let P = vartime::k_fold_scalar_mult(&scalars, &points);
-            let e_1_i = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
+            let mi2_H = &mi_H + &mi_H;
 
-            scalars[0] = self.s_2[i];
-            scalars[1] = &(&e_1_i * &two) * &POWERS_OF_THREE[i];
-            scalars[2] = -&e_1_i;
-            // P = s_2[i]*G + 2*e_1*m^i*H - e_1*C[i] 
-            let P = vartime::k_fold_scalar_mult(&scalars, &points);
-            let e_2_i = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
+            let Ci_minus_2miH = &self.C[i] - &mi2_H;
+            let P = vartime::k_fold_scalar_mult(&[self.s_2[i], -&ei_1],
+                                                &[G.basepoint(), Ci_minus_2miH]);
+            let ei_2 = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
 
-            let R_i = &self.C[i] * &e_2_i;
-            e_0_hash.input(R_i.compress().as_bytes());
-            C = self.C[i];
+            let Ri = &self.C[i] * &ei_2;
+            e_0_hash.input(Ri.compress().as_bytes());
+            C = &C + &self.C[i];
+
+            // Set mi_H <-- 3*m_iH, so that mi_H is always 3^i * H in the loop
+            mi_H = &mi_H + &mi2_H;
         }
 
         let e_0_hat = Scalar::from_hash(e_0_hash);
@@ -88,67 +89,87 @@ impl RangeProof {
 
         let mut R = [DecafPoint::identity(); RANGEPROOF_N];
         let mut C = [DecafPoint::identity(); RANGEPROOF_N];
-        let mut k_0 = [Scalar::zero(); RANGEPROOF_N];
+        let mut k   = [Scalar::zero(); RANGEPROOF_N];
         let mut r   = [Scalar::zero(); RANGEPROOF_N];
         let mut s_1 = [Scalar::zero(); RANGEPROOF_N];
         let mut s_2 = [Scalar::zero(); RANGEPROOF_N];
         let mut e_1 = [Scalar::zero(); RANGEPROOF_N];
         let mut e_2 = [Scalar::zero(); RANGEPROOF_N];
 
-        let mut e_0_hash = Sha512::default();
-
-        let two = Scalar::from_u64(2);
-
+        let mut mi_H = H.basepoint();
         for i in 0..RANGEPROOF_N {
+            let mi2_H = &mi_H + &mi_H;
+            k[i] = Scalar::random(&mut rng);
+
             if v[i] == 0 {
-                k_0[i] = Scalar::random(&mut rng);
-                R[i] = G * &k_0[i];
+                R[i] = G * &k[i];
             } else if v[i] == 1 {
+                // Commitment to i-th digit is r^i G + 1 * m^i H
                 r[i] = Scalar::random(&mut rng);
-                C[i] = &(H * &POWERS_OF_THREE[i]) + &(G * &r[i]);
-                k_0[i] = Scalar::random(&mut rng);
-                e_1[i] = Scalar::hash_from_bytes::<Sha512>((G * &k_0[i]).compress().as_bytes());
+                C[i] = &(G * &r[i]) + &mi_H;
+                // Begin at index 1 in the ring, choosing random e_1
+                let P = G * &k[i];
+                e_1[i] = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
+                // Choose random scalar for s_2
                 s_2[i] = Scalar::random(&mut rng);
-                let mi_e1i_2 = &(&POWERS_OF_THREE[i] * &two) * &e_1[i];
-                let P = &(&(G * &s_2[i]) - &(&C[i] * &e_1[i])) + &(H * &mi_e1i_2);
-                // XXX fix the fucking RHS bullshit
+                // Compute e_2 = Hash(s_2^i G - e_1^i (C^i - 2m^i H) )
+                let Ci_minus_mi2H = &C[i] - &mi2_H;
+                let P = vartime::k_fold_scalar_mult(&[s_2[i],       -&e_1[i]],
+                                                    &[G.basepoint(), Ci_minus_mi2H]);
                 e_2[i] = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
+
+                R[i] = &C[i] * &e_2[i];
+            } else if v[i] == 2 {
+                // Commitment to i-th digit is r^i G + 2 * m^i H
+                r[i] = Scalar::random(&mut rng);
+                C[i] = &(G * &r[i]) + &mi2_H;
+                // Begin at index 2 in the ring, choosing random e_2
+                let P = G * &k[i];
+                e_2[i] = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
+
                 R[i] = &C[i] * &e_2[i];
             } else {
-                // XXX these three lines are repeateed above
-                r[i] = Scalar::random(&mut rng);
-                C[i] = &(H * &POWERS_OF_THREE[i]) + &(G * &r[i]);
-                k_0[i] = Scalar::random(&mut rng);
-                e_2[i] = Scalar::hash_from_bytes::<Sha512>((G * &k_0[i]).compress().as_bytes());
-                R[i] = &C[i] * &e_2[i];
-            }
+                panic!(); /* invalid digit */
+            } 
+
+            // Set mi_H <- m * mi_H so that mi_H = m^i H in the loop
+            mi_H = &mi2_H + &mi_H;
+        }
+
+        // Compute e_0 = Hash( R^0 || ... || R^{n-1} )
+        let mut e_0_hash = Sha512::default();
+        for i in 0..RANGEPROOF_N {
             e_0_hash.input(R[i].compress().as_bytes());
         }
-            
         let e_0 = Scalar::from_hash(e_0_hash);
 
+        let mut mi_H = H.basepoint();
         for i in 0..RANGEPROOF_N {
+            let mi2_H = &mi_H + &mi_H;
             if v[i] == 0 {
                 let k_1 = Scalar::random(&mut rng);
-                let P = &(G * &k_1) + &(H * &(&e_0 * &POWERS_OF_THREE[i]));
+                let P = vartime::k_fold_scalar_mult(&[k_1, e_0], &[G.basepoint(), mi_H]);
                 e_1[i] = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
 
                 let k_2 = Scalar::random(&mut rng);
-                let P = &(G * &k_2) + &(H * &(&e_1[i] * &(&POWERS_OF_THREE[i] * &two)));
+                let P = vartime::k_fold_scalar_mult(&[k_2, e_1[i]], &[G.basepoint(), mi2_H]);
                 e_2[i] = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
 
                 let e_2_inv = e_2[i].invert();
+                C[i] = G * &(&e_2_inv * &k[i]);
 
-                C[i] = G * &(&e_2_inv * &k_0[i]);
-
-                s_1[i] = &k_1 + &(&k_0[i] * &(&e_0 * &e_2_inv));
-                s_2[i] = &k_2 + &(&k_0[i] * &(&e_1[i] * &e_2_inv));
+                s_1[i] = &k_1 + &(&e_0    * &(&k[i] * &e_2_inv));
+                s_2[i] = &k_2 + &(&e_1[i] * &(&k[i] * &e_2_inv));
             } else if v[i] == 1 {
-                s_1[i] = Scalar::multiply_add(&e_0, &r[i], &k_0[i]);
-            } else { 
+                s_1[i] = Scalar::multiply_add(&e_0, &r[i], &k[i]);
+            } else if v[i] == 2 { 
                 s_1[i] = Scalar::random(&mut rng);
-                let P = &(&(G * &s_1[i]) - &(&C[i] * &e_0)) - &(H * &(&e_0 * &POWERS_OF_THREE[i]));
-                s_2[i] = Scalar::multiply_add(&e_1[i], &r[i], &k_0[i]);
+                // Compute e_1^i = Hash(s_1^i G - e_0^i (C^i - 1 m^i H) )
+                let Ci_minus_miH = &C[i] - &mi_H;
+                let P = vartime::k_fold_scalar_mult(&[s_1[i],        -&e_0],
+                                                    &[G.basepoint(), Ci_minus_miH]);
+                e_1[i] = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
+                s_2[i] = Scalar::multiply_add(&e_1[i], &r[i], &k[i]);
             }
         }
     
@@ -179,51 +200,6 @@ pub fn base3_digits(mut x: u64) -> [u8; 41] {
     }
     digits
 }
-
-pub const POWERS_OF_THREE: [Scalar; 41] = [
-    Scalar([  1,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([  3,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([  9,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([ 27,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([ 81,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([243,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([217,   2,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([139,   8,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([161,  25,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([227,  76,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([169, 230,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([251, 179,   2,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([241,  27,   8,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([211,  83,  24,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([121, 251,  72,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([107, 242, 218,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([ 65, 215, 144,   2,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([195, 133, 178,   7,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([ 73, 145,  23,  23,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([219, 179,  70,  69,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([145,  27, 212, 207,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([179,  82, 124, 111,   2,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([ 25, 248, 116,  78,   7,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([ 75, 232,  94, 235,  21,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([225, 184,  28, 194,  65,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([163,  42,  86,  70, 197,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([233, 127,   2, 211,  79,   2,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([187, 127,   7, 121, 239,   6,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([ 49, 127,  22, 107, 206,  20,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([147, 125,  67,  65, 107,  62,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([185, 120, 202, 195,  65, 187,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([ 43, 106,  95,  75, 197,  49,   2,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([129,  62,  30, 226,  79, 149,   6,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([131, 187,  90, 166, 239, 191,  19,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([137,  50,  16, 243, 206,  63,  59,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([155, 151,  48, 217, 108, 191, 177,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([209, 198, 145, 139,  70,  62,  21,   2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([115,  84, 181, 162, 211, 186,  63,   6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([ 89, 253,  31, 232, 122,  48, 191,  18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([ 11, 248,  95, 184, 112, 145,  61,  56, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    Scalar([ 33, 232,  31,  41,  82, 180, 184, 168, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    ];
-
 
 #[cfg(test)]
 mod tests {
@@ -258,17 +234,6 @@ mod tests {
             for j in 0..41 {
                 assert_eq!(digits[j], digits_sage[i][j]);
             }
-        }
-    }
-
-    #[test]
-    fn check_powers_of_three_table() {
-        let mut m = Scalar::zero();
-        m[0] = 3;
-        let mut x = Scalar::one();
-        for i in 0..41 {
-            assert_eq!(x, POWERS_OF_THREE[i]);
-            x *= &m;
         }
     }
 
