@@ -17,7 +17,7 @@ use curve25519_dalek::decaf::vartime;
 
 use curve25519_dalek::constants as dalek_constants;
 
-pub const RANGEPROOF_N: usize = 24;
+pub const RANGEPROOF_N: usize = 2;
 
 struct RangeProof {
     e_0: Scalar,
@@ -80,6 +80,7 @@ impl RangeProof {
     ) -> Option<(RangeProof,Scalar)> {
         let v = base3_digits(value);
 
+        println!("{:?}", &v[..]);
         // Check that v is in range: all digits above N should be 0
         for i in RANGEPROOF_N..41 {
             if v[i] != 0 { return None; }
@@ -238,14 +239,15 @@ mod tests {
     }
 
     #[test]
-    fn prove_seven() {
+    fn prove_and_verify() {
         let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
         let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
 
-        let value = 7;
+        let value = 8;
         let (proof, blinding) = RangeProof::create_vartime(value, G, &H).unwrap();
 
-        let C = proof.verify(G, &H).unwrap();
+        let C_option = proof.verify(G, &H);
+        assert!(C_option.is_some());
     }
 }
 
@@ -259,7 +261,7 @@ mod bench {
         let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
         let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
 
-        let value = 7;
+        let value = 0;
         let (proof, blinding) = RangeProof::create_vartime(value, G, &H).unwrap();
 
         b.iter(|| proof.verify(G, &H));
