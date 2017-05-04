@@ -44,12 +44,12 @@ impl RangeProof {
         let mut mi_H = H.basepoint();
 
         for i in 0..RANGEPROOF_N {
+            let mi2_H = &mi_H + &mi_H;
+
             let Ci_minus_miH = &self.C[i] - &mi_H;
             let P = vartime::k_fold_scalar_mult(&[self.s_1[i], -&self.e_0],
                                                 &[G.basepoint(), Ci_minus_miH]);
             let ei_1 = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
-
-            let mi2_H = &mi_H + &mi_H;
 
             let Ci_minus_2miH = &self.C[i] - &mi2_H;
             let P = vartime::k_fold_scalar_mult(&[self.s_2[i], -&ei_1],
@@ -172,6 +172,8 @@ impl RangeProof {
                 e_1[i] = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
                 s_2[i] = Scalar::multiply_add(&e_1[i], &r[i], &k[i]);
             }
+            // Set mi_H <-- 3*m_iH, so that mi_H is always 3^i * H in the loop
+            mi_H = &mi_H + &mi2_H;
         }
     
         let mut r_sum = Scalar::zero();
