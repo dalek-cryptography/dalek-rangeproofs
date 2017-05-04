@@ -17,7 +17,7 @@ use curve25519_dalek::decaf::vartime;
 
 use curve25519_dalek::constants as dalek_constants;
 
-pub const RANGEPROOF_N: usize = 2;
+pub const RANGEPROOF_N: usize = 24;
 
 struct RangeProof {
     e_0: Scalar,
@@ -157,7 +157,8 @@ impl RangeProof {
                 e_2[i] = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
 
                 let e_2_inv = e_2[i].invert();
-                C[i] = G * &(&e_2_inv * &k[i]);
+                r[i] = &e_2_inv * &k[i];
+                C[i] = G * &r[i];
 
                 s_1[i] = &k_1 + &(&e_0    * &(&k[i] * &e_2_inv));
                 s_2[i] = &k_2 + &(&e_1[i] * &(&k[i] * &e_2_inv));
@@ -245,7 +246,7 @@ mod tests {
         let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
         let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
 
-        let value = 4;
+        let value = 134492616741;
         let (proof, blinding) = RangeProof::create_vartime(value, G, &H).unwrap();
 
         let C_option = proof.verify(G, &H);
