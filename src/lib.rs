@@ -268,7 +268,7 @@ mod bench {
         let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
 
         let value = 0;
-        let (proof, blinding) = RangeProof::create_vartime(value, G, &H).unwrap();
+        let (proof, _) = RangeProof::create_vartime(value, G, &H).unwrap();
 
         b.iter(|| proof.verify(G, &H));
     }
