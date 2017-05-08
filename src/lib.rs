@@ -206,10 +206,6 @@ mod tests {
     use curve25519_dalek::constants as dalek_constants;
 
     #[test]
-    fn it_works() {
-    }
-
-    #[test]
     fn base3_digits_vs_sage() {
         let values: [u64; 10] = [10352669767914021650,  7804842618637096123,
                                   7334633556203117754,  8160423201521470302,
