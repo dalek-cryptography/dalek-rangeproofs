@@ -14,10 +14,8 @@ use sha2::Digest;
 
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::curve::{Identity};
-use curve25519_dalek::decaf::{DecafPoint, CompressedDecaf, DecafBasepointTable};
+use curve25519_dalek::decaf::{DecafPoint, DecafBasepointTable};
 use curve25519_dalek::decaf::vartime;
-
-use curve25519_dalek::constants as dalek_constants;
 
 pub const RANGEPROOF_N: usize = 40;
 
@@ -210,6 +208,8 @@ pub fn base3_digits(mut x: u64) -> [u8; 41] {
 mod tests {
     use super::*;
     
+    use curve25519_dalek::constants as dalek_constants;
+
     #[test]
     fn it_works() {
     }
@@ -264,6 +264,8 @@ mod tests {
 mod bench {
     use test::Bencher;
     use super::*;
+
+    use curve25519_dalek::constants as dalek_constants;
 
     #[bench]
     fn verify(b: &mut Bencher) {
