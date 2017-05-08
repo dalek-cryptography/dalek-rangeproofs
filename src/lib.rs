@@ -33,11 +33,6 @@ impl RangeProof {
                   G: &DecafBasepointTable,
                   H: &DecafBasepointTable)
                   -> Option<DecafPoint> {
-        let mut points = vec![G.basepoint(), H.basepoint(), DecafPoint::identity()];
-        let mut scalars = vec![Scalar::zero(), Scalar::zero(), Scalar::zero()];
-
-        let two = Scalar::from_u64(2);
-
         let mut e_0_hash = Sha512::default();
         let mut C = DecafPoint::identity();
 
