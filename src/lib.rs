@@ -153,6 +153,9 @@ use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::curve::{Identity};
 use curve25519_dalek::decaf::{DecafPoint, DecafBasepointTable};
 use curve25519_dalek::decaf::vartime;
+use curve25519_dalek::subtle::CTAssignable;
+use curve25519_dalek::subtle::bytes_equal_ct;
+use curve25519_dalek::subtle::byte_is_nonzero;
 
 pub const RANGEPROOF_N: usize = 40;
 
@@ -334,11 +337,172 @@ impl RangeProof {
 
     /// Construct a rangeproof for `value` in constant time.
     ///
-    /// Executes in constant time for all values of `value` in range.
+    /// # Inputs
     ///
-    /// If `value` is out of range, returns an error early.
-    pub fn create(value: u64) -> Option<RangeProof> {
-        unimplemented!();
+    /// * `value`, a `u64`, the value to prove is within range;
+    /// * `G`, a `DecafBasepointTable`, a table of precomputed multiples of a
+    ///   distinguished basepoint;
+    /// * `H`, a `DecafBasepointTable`, a table of precomputed multiples of a
+    ///   distinguished basepoint;
+    /// * `csprnng`, an implementation of `rand::Rng`, a cryptographically-secure
+    ///   pseudorandom number generator.
+    ///
+    /// # Returns
+    ///
+    /// An `Option<(RangeProof, Scalar)>`.  If the `value` was, in fact, in
+    /// range, returns `Some((RangeProof, Scalar))`.  Otherwise, if the `value`
+    /// is out of range, returns `None` (after doing all the computations).
+    ///
+    /// # Warning
+    ///
+    /// Even when passing a deterministic CSPRNG generated with identical seeds,
+    /// e.g. two instances of `rand::chacha::ChaChaRng::new_unseeded()`, and
+    /// seeking to prove the same `value`, one cannot expect the `RangeProofs`
+    /// generated with `RangeProof::create_vartime()` and `RangeProof::create()`
+    /// to be identical.  The values in the eventual proofs will differ, since
+    /// this constant time version makes additional calls to the `csprng` which
+    /// are thrown away in some conditions.
+    pub fn create<T: Rng>(value: u64,
+                          G: &DecafBasepointTable,
+                          H: &DecafBasepointTable,
+                          mut csprng: &mut T) -> Option<(RangeProof, Scalar)> {
+
+        let v: [u8; 41] = base3_digits(value);
+        let mut err: u8 = 0;
+
+        // Check that v is in range: all digits above N should be 0
+        for i in RANGEPROOF_N .. 41 {
+            err ^= v[i];
+        }
+
+        let mut R = [DecafPoint::identity(); RANGEPROOF_N];
+        let mut C = [DecafPoint::identity(); RANGEPROOF_N];
+        let mut k   = [Scalar::zero(); RANGEPROOF_N];
+        let mut r   = [Scalar::zero(); RANGEPROOF_N];
+        let mut s_1 = [Scalar::zero(); RANGEPROOF_N];
+        let mut s_2 = [Scalar::zero(); RANGEPROOF_N];
+        let mut e_1 = [Scalar::zero(); RANGEPROOF_N];
+        let mut e_2 = [Scalar::zero(); RANGEPROOF_N];
+
+        let mut mi_H: DecafPoint = H.basepoint();
+        let mut P:    DecafPoint;
+
+        for i in 0 .. RANGEPROOF_N {
+            debug_assert!(v[i] == 0 || v[i] == 1 || v[i] == 2);
+
+            let mi2_H: DecafPoint = &mi_H + &mi_H;
+
+            k[i] = Scalar::random(&mut csprng);
+
+            // Commitment to i-th digit is r^i G + (v^1 * m^i H)
+            let maybe_ri: Scalar = Scalar::random(&mut csprng);
+            r[i].conditional_assign(&maybe_ri, byte_is_nonzero(v[i]));
+
+            let mut which_mi_H: DecafPoint = mi_H;  // is a copy
+            which_mi_H.conditional_assign(&mi2_H, bytes_equal_ct(v[i], 2u8));
+
+            let maybe_Ci: DecafPoint = &(G * &r[i]) + &which_mi_H;
+            C[i].conditional_assign(&maybe_Ci, byte_is_nonzero(v[i]));
+
+            P = &k[i] * G;
+
+            // Begin at index 1 in the ring, choosing random e_{v^i}
+            let mut maybe_ei: Scalar = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
+            e_1[i].conditional_assign(&maybe_ei, bytes_equal_ct(v[i], 1u8));
+            e_2[i].conditional_assign(&maybe_ei, bytes_equal_ct(v[i], 2u8));
+
+            // Choose random scalar for s_2
+            let maybe_s2: Scalar = Scalar::random(&mut csprng);
+            s_2[i].conditional_assign(&maybe_s2, bytes_equal_ct(v[i], 1u8));
+
+            // Compute e_2 = Hash(s_2^i G - e_1^i (C^i - 2m^i H) )
+            // XXX wtf how the fuck do we get rid of this &(-(&e_1[i])) fuckery
+            P = &(&s_2[i] * &G.basepoint()) + &(&(-(&e_1[i])) * &(&C[i] - &mi2_H));
+            maybe_ei = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
+            e_2[i].conditional_assign(&maybe_ei, bytes_equal_ct(v[i], 1u8));
+
+            // Compute R^i = k^i G            iff  v^i == 0, otherwise
+            //         R^i = e_2^i * C^i
+            R[i] = &k[i] * G;
+
+            let maybe_Ri: DecafPoint = &e_2[i] * &C[i];
+            R[i].conditional_assign(&maybe_Ri, byte_is_nonzero(v[i]));
+
+            // Multiply mi_H by m (a.k.a. m == 3)
+            mi_H = &mi2_H + &mi_H;
+        }
+
+        // Compute e_0 = Hash( R^0 || ... || R^{n-1} )
+        let mut e_0_hash = Sha512::default();
+        for i in 0 .. RANGEPROOF_N {
+            e_0_hash.input(R[i].compress().as_bytes());  // XXX new digest API for 0.5.x
+        }
+        let e_0 = Scalar::from_hash(e_0_hash);
+
+        let mut mi_H = H.basepoint();
+
+        for i in 0 .. RANGEPROOF_N {
+            debug_assert!(v[i] == 0 || v[i] == 1 || v[i] == 2);
+
+            let mi2_H = &mi_H + &mi_H;
+
+            let mut k_1 = Scalar::zero();
+            let maybe_k1: Scalar = Scalar::random(&mut csprng);
+            k_1.conditional_assign(&maybe_k1, bytes_equal_ct(v[i], 0u8));
+
+            P = &(&k_1 * G) + &(&e_0 * &mi_H);
+            let maybe_e_1 = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
+            e_1[i].conditional_assign(&maybe_e_1, bytes_equal_ct(v[i], 0u8));
+
+            let mut k_2 = Scalar::zero();
+            let maybe_k2: Scalar = Scalar::random(&mut csprng);
+            k_2.conditional_assign(&maybe_k2, bytes_equal_ct(v[i], 0u8));
+
+            P = &(&k_2 * &G.basepoint()) + &(&e_1[i] * &mi2_H);
+            let maybe_e_2 = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes()); // XXX API
+            e_2[i].conditional_assign(&maybe_e_2, bytes_equal_ct(v[i], 0u8));
+
+            let e_2_inv = e_2[i].invert();  // XXX only used in v[i]==0, check what the optimiser is doing
+            let maybe_r_i = &e_2_inv * &k[i];
+            r[i].conditional_assign(&maybe_r_i, bytes_equal_ct(v[i], 0u8));
+
+            let maybe_C_i = G * &r[i];
+            C[i].conditional_assign(&maybe_C_i, bytes_equal_ct(v[i], 0u8));
+
+            let mut maybe_s_1 = &k_1 + &(&e_0 * &(&k[i] * &e_2_inv));  // XXX reuse k[i] * e_2_inv
+            s_1[i].conditional_assign(&maybe_s_1, bytes_equal_ct(v[i], 0u8));
+            maybe_s_1 = Scalar::multiply_add(&e_0, &r[i], &k[i]);
+            s_1[i].conditional_assign(&maybe_s_1, bytes_equal_ct(v[i], 1u8));
+            maybe_s_1 = Scalar::random(&mut csprng);
+            s_1[i].conditional_assign(&maybe_s_1, bytes_equal_ct(v[i], 2u8));
+
+            // Compute e_1^i = Hash(s_1^i G - e_0^i (C^i - 1 m^i H) )
+            let Ci_minus_miH = &C[i] - &mi_H;  // XXX only used in v[i]==2, check optimiser
+
+            // XXX wtf how the fuck do we get rid of this &(-(&e_0)) fuckery
+            P = &(&s_1[i] * &G.basepoint()) + &(&(-(&e_0)) * &Ci_minus_miH);
+            let maybe_e_1 = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
+            e_1[i].conditional_assign(&maybe_e_1, bytes_equal_ct(v[i], 2u8));
+
+            let mut maybe_s_2 = &k_2 + &(&e_1[i] * &(&k[i] * &e_2_inv));  // XXX reuse k[i] * e_2_inv
+            s_2[i].conditional_assign(&maybe_s_2, bytes_equal_ct(v[i], 0u8));
+            maybe_s_2 = Scalar::multiply_add(&e_1[i], &r[i], &k[i]);
+            s_2[i].conditional_assign(&maybe_s_2, bytes_equal_ct(v[i], 2u8));
+
+            // Set mi_H <-- 3*m_iH, so that mi_H is always 3^i * H in the loop
+            mi_H = &mi_H + &mi2_H;
+        }
+
+        let mut r_sum = Scalar::zero();
+        for i in 0 .. RANGEPROOF_N {
+            r_sum += &r[i];
+        }
+
+        if byte_is_nonzero(err) == 0u8 {  // XXX
+            return Some((RangeProof{ e_0: e_0, C: C, s_1: s_1, s_2: s_2}, r_sum));
+        } else {
+            return None;
+        }
     }
 }
 
@@ -355,7 +519,9 @@ pub fn base3_digits(mut x: u64) -> [u8; 41] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
+    use rand::OsRng;
+
     use curve25519_dalek::constants as dalek_constants;
 
     #[test]
@@ -387,12 +553,33 @@ mod tests {
     }
 
     #[test]
-    fn prove_and_verify() {
+    fn prove_and_verify_vartime() {
         let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
         let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
 
+        let mut csprng = OsRng::new().unwrap();
+
         let value = 134492616741;
-        let (proof, blinding) = RangeProof::create_vartime(value, G, &H).unwrap();
+        let (proof, blinding) = RangeProof::create_vartime(value, G, &H, &mut csprng).unwrap();
+
+        let C_option = proof.verify(G, &H);
+        assert!(C_option.is_some());
+
+        let C = C_option.unwrap();
+        let C_hat = &(G * &blinding) + &(&H * &Scalar::from_u64(value));
+
+        assert_eq!(C.compress(), C_hat.compress());
+    }
+
+    #[test]
+    fn prove_and_verify_ct() {
+        let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
+        let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
+
+        let mut csprng = OsRng::new().unwrap();
+
+        let value = 134492616741;
+        let (proof, blinding) = RangeProof::create(value, G, &H, &mut csprng).unwrap();
 
         let C_option = proof.verify(G, &H);
         assert!(C_option.is_some());
@@ -409,6 +596,7 @@ mod bench {
     use test::Bencher;
     use super::*;
 
+    use rand::OsRng;
     use curve25519_dalek::constants as dalek_constants;
 
     #[bench]
@@ -416,19 +604,34 @@ mod bench {
         let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
         let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
 
+        let mut csprng = OsRng::new().unwrap();
+
         let value = 0;
-        let (proof, _) = RangeProof::create_vartime(value, G, &H).unwrap();
+        let (proof, _) = RangeProof::create_vartime(value, G, &H, &mut csprng).unwrap();
 
         b.iter(|| proof.verify(G, &H));
     }
 
     #[bench]
-    fn prove(b: &mut Bencher) {
+    fn prove_vartime(b: &mut Bencher) {
         let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
         let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
 
+        let mut csprng = OsRng::new().unwrap();
+
         let value = 1666;
-        b.iter(|| RangeProof::create_vartime(value, G, &H));
+        b.iter(|| RangeProof::create_vartime(value, G, &H, &mut csprng));
+    }
+
+    #[bench]
+    fn prove_ct(b: &mut Bencher) {
+        let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
+        let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
+
+        let mut csprng = OsRng::new().unwrap();
+
+        let value = 1666;
+        b.iter(|| RangeProof::create(value, G, &H, &mut csprng));
     }
 
     #[bench]
