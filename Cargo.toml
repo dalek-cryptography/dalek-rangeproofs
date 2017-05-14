@@ -13,4 +13,4 @@ features = ["yolocrypto", "nightly"]
 version = "0.6"
 
 [replace]
-"curve25519-dalek:0.6.0" = { git= 'https://github.com/hdevalence/curve25519-dalek', branch = 'feature/operator_scalar_mult_r2' }
+"curve25519-dalek:0.6.0" = { git= 'https://github.com/isislovecruft/curve25519-dalek', branch = 'feature/scalarmult-lhs', features = ["yolocrypto", "nightly"] }
