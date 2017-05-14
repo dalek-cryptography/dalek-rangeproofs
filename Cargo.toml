@@ -1,7 +1,8 @@
 [package]
 name = "dalek-rangeproofs"
 version = "0.1.0"
-authors = ["Henry de Valence <hdevalence@hdevalence.ca>"]
+authors = ["Henry de Valence <hdevalence@hdevalence.ca>",
+           "Isis Agora Lovecruft <isis@patternsinthevoid.net>"]
 
 [dependencies]
 sha2 = "0.4"
