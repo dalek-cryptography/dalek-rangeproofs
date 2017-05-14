@@ -377,6 +377,12 @@ impl RangeProof {
     /// to be identical.  The values in the eventual proofs will differ, since
     /// this constant time version makes additional calls to the `csprng` which
     /// are thrown away in some conditions.
+    ///
+    /// # Note
+    ///
+    /// This function is roughly three times slower (since `m = 3`) than the
+    /// variable time version, for all values of `n`.
+    ///
     pub fn create<T: Rng>(value: u64,
                           G: &DecafBasepointTable,
                           H: &DecafBasepointTable,
