@@ -1,3 +1,140 @@
+// -*- coding: utf-8; mode: rust; -*-
+//
+// To the extent possible under law, the authors have waived all
+// copyright and related or neighboring rights to dalek-rangeproofs,
+// using the Creative Commons "CC0" public domain dedication.  See
+// <http://creativecommons.org/publicdomain/zero/.0/> for full
+// details.
+//
+// Authors:
+// - Isis Agora Lovecruft <isis@patternsinthevoid.net>
+// - Henry de Valence <hdevalence@hdevalence.ca>
+
+//! A pure-Rust implementation of the Back-Maxwell rangeproof scheme defined in
+//! ["Confidential Assets" (2017) by Poelstra, Back, Friedenbach, Maxwell,
+//! Wuille](https://blockstream.com/bitcoin17-final41.pdf).
+//!
+//! # Examples
+//!
+//! To construct a proof that `134492616741` is within `[0,3^RANGEPROOF_N]`,
+//! first, select your basepoints (usually this will be set or distributed
+//! within some system-wide parameters):
+//!
+//! ```
+//! # extern crate curve25519_dalek;
+//! # fn main() {
+//! use curve25519_dalek::constants as dalek_constants;
+//! use curve25519_dalek::decaf::DecafBasepointTable;
+//! use curve25519_dalek::scalar::Scalar;
+//!
+//! let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
+//! let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
+//! # }
+//!
+//! ```
+//!
+//! You'll also need your value and a CSPRNG:
+//!
+//! ```
+//! # extern crate rand;
+//! # fn main() {
+//! use rand::OsRng;
+//!
+//! let mut csprng = OsRng::new().unwrap();
+//! let value = 134492616741;
+//! # }
+//! ```
+//!
+//! We can now create the rangeproof and blinding factor, like so:
+//!
+//! ```
+//! # extern crate dalek_rangeproofs;
+//! # extern crate curve25519_dalek;
+//! # extern crate rand;
+//! # fn main() {
+//! # use curve25519_dalek::constants as dalek_constants;
+//! # use curve25519_dalek::decaf::DecafBasepointTable;
+//! # use curve25519_dalek::scalar::Scalar;
+//! # use rand::OsRng;
+//! #
+//! # let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
+//! # let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
+//! # let mut csprng = OsRng::new().unwrap();
+//! # let value = 134492616741;
+//!
+//! use dalek_rangeproofs::RangeProof;
+//!
+//! let (proof, blinding) = RangeProof::create(value, G, &H, &mut csprng).unwrap();
+//! # }
+//! ```
+//!
+//! Another party can verify this `proof` by doing:
+//!
+//! ```
+//! # extern crate dalek_rangeproofs;
+//! # extern crate curve25519_dalek;
+//! # extern crate rand;
+//! # fn main() {
+//! # use curve25519_dalek::constants as dalek_constants;
+//! # use curve25519_dalek::decaf::DecafBasepointTable;
+//! # use curve25519_dalek::scalar::Scalar;
+//! # use rand::OsRng;
+//! #
+//! # let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
+//! # let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
+//! # let mut csprng = OsRng::new().unwrap();
+//! # let value = 134492616741;
+//!
+//! use dalek_rangeproofs::RangeProof;
+//!
+//! # let (proof, blinding) = RangeProof::create(value, G, &H, &mut csprng).unwrap();
+//!
+//! let C_option = proof.verify(G, &H);
+//! assert!(C_option.is_some());
+//!
+//! let C = C_option.unwrap();
+//! # }
+//! ```
+//!
+//! As we can see above, verifying the `proof` returns an option for
+//! something we've called `C`.  This `C` is a Pedersen commitment to
+//! `value`.  However, without knowing both `blinding` and the actual
+//! `value`, the verifier cannot open this commitment, because Pedersen
+//! commitments are computationally binding and perfectly hiding (in
+//! addition to being additively homomorphic, a feature used within this
+//! scheme).
+//!
+//! To open this commitment, one would do:
+//!
+//! ```
+//! # extern crate dalek_rangeproofs;
+//! # extern crate curve25519_dalek;
+//! # extern crate rand;
+//! # fn main() {
+//! # use curve25519_dalek::constants as dalek_constants;
+//! # use curve25519_dalek::decaf::DecafBasepointTable;
+//! # use curve25519_dalek::scalar::Scalar;
+//! # use rand::OsRng;
+//! #
+//! # use dalek_rangeproofs::RangeProof;
+//! #
+//! # let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
+//! # let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
+//! # let mut csprng = OsRng::new().unwrap();
+//! # let value = 134492616741;
+//! #
+//! # let (proof, blinding) = RangeProof::create(value, G, &H, &mut csprng).unwrap();
+//! # let C_option = proof.verify(G, &H);
+//! # let C = C_option.unwrap();
+//! let C_hat = &(G * &blinding) + &(&H * &Scalar::from_u64(value));
+//! assert_eq!(C.compress(), C_hat.compress());
+//! # }
+//! ```
+//!
+//! However, obviously, the prover should *not* give either the `blinding`
+//! or the `value` to any other party, unless the prover wishes to reveal
+//! the `value` *not* in zero-knowledge.
+
 #![allow(non_snake_case)]
 
 #![feature(test)]
