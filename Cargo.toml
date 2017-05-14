@@ -3,6 +3,16 @@ name = "dalek-rangeproofs"
 version = "0.1.0"
 authors = ["Henry de Valence <hdevalence@hdevalence.ca>",
            "Isis Agora Lovecruft <isis@patternsinthevoid.net>"]
+readme = "README.md"
+license = "CC0-1.0"
+repository = "https://github.com/isislovecruft/dalek-rangeproofs"
+documentation = "https://docs.rs/dalek-rangeproofs"
+categories = ["cryptography", "no-std"]
+keywords = ["cryptography", "curve25519", "zero-knowledge", "NIZK", "rangeproof"]
+description = "A pure-Rust implementation of a non-interactive zero-knowledge rangeproof scheme."
+exclude = [
+    ".gitignore"
+]
 
 [dependencies]
 sha2 = "0.4"
