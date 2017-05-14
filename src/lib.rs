@@ -135,15 +135,24 @@
 //! or the `value` to any other party, unless the prover wishes to reveal
 //! the `value` *not* in zero-knowledge.
 
-#![allow(non_snake_case)]
+#![no_std]
 
-#![feature(test)]
+#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(feature = "bench", feature(test))]
+
+#![allow(non_snake_case)]
+#![deny(missing_docs)]
+
+#[cfg(all(test, feature = "bench"))]
 extern crate test;
 
 extern crate curve25519_dalek;
 extern crate sha2;
+
+#[cfg(feature = "std")]
 extern crate rand;
 
+#[cfg(feature = "std")]
 use rand::Rng;
 
 use sha2::Sha512;
@@ -157,8 +166,14 @@ use curve25519_dalek::subtle::CTAssignable;
 use curve25519_dalek::subtle::bytes_equal_ct;
 use curve25519_dalek::subtle::byte_is_nonzero;
 
+/// A Back-Maxwell rangeproof has size O(m^n) where `m` is the base
+/// and `n` is the number of bits of the maximum number in range,
+/// w.r.t. that base.  Due to the ring signatures used, it is most
+/// efficient to take `m = 3`.  Therefore, to construct a proof valid
+/// for any `u64` value, m^n must be greater than 2^{64}, thus `n = 40`.
 pub const RANGEPROOF_N: usize = 40;
 
+/// A Back-Maxwell rangeproof
 pub struct RangeProof {
     e_0: Scalar,
     C: [DecafPoint; RANGEPROOF_N],
@@ -591,7 +606,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "bench"))]
 mod bench {
     use test::Bencher;
     use super::*;
