@@ -159,7 +159,7 @@ use curve25519_dalek::subtle::byte_is_nonzero;
 
 pub const RANGEPROOF_N: usize = 40;
 
-struct RangeProof {
+pub struct RangeProof {
     e_0: Scalar,
     C: [DecafPoint; RANGEPROOF_N],
     s_1: [Scalar; RANGEPROOF_N],
