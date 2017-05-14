@@ -144,7 +144,7 @@ extern crate curve25519_dalek;
 extern crate sha2;
 extern crate rand;
 
-use rand::OsRng;
+use rand::Rng;
 
 use sha2::Sha512;
 use sha2::Digest;
@@ -224,18 +224,16 @@ impl RangeProof {
     /// should be relayed to the verifier.  The `Scalar` is the blinding factor
     /// for the opening to the commitment `C`, so the entire opening is the
     /// tuple `(value, Scalar)`.
-    pub fn create_vartime(value: u64,
-                          G: &DecafBasepointTable,
-                          H: &DecafBasepointTable,
-    ) -> Option<(RangeProof,Scalar)> {
+    pub fn create_vartime<T: Rng>(value: u64,
+                                  G: &DecafBasepointTable,
+                                  H: &DecafBasepointTable,
+                                  mut csprng: &mut T) -> Option<(RangeProof, Scalar)> {
         let v = base3_digits(value);
 
         // Check that v is in range: all digits above N should be 0
         for i in RANGEPROOF_N..41 {
             if v[i] != 0 { return None; }
         }
-
-        let mut rng = OsRng::new().unwrap();
 
         let mut R = [DecafPoint::identity(); RANGEPROOF_N];
         let mut C = [DecafPoint::identity(); RANGEPROOF_N];
@@ -249,19 +247,19 @@ impl RangeProof {
         let mut mi_H = H.basepoint();
         for i in 0..RANGEPROOF_N {
             let mi2_H = &mi_H + &mi_H;
-            k[i] = Scalar::random(&mut rng);
+            k[i] = Scalar::random(&mut csprng);
 
             if v[i] == 0 {
                 R[i] = G * &k[i];
             } else if v[i] == 1 {
                 // Commitment to i-th digit is r^i G + 1 * m^i H
-                r[i] = Scalar::random(&mut rng);
+                r[i] = Scalar::random(&mut csprng);
                 C[i] = &(G * &r[i]) + &mi_H;
                 // Begin at index 1 in the ring, choosing random e_1
                 let P = G * &k[i];
                 e_1[i] = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
                 // Choose random scalar for s_2
-                s_2[i] = Scalar::random(&mut rng);
+                s_2[i] = Scalar::random(&mut csprng);
                 // Compute e_2 = Hash(s_2^i G - e_1^i (C^i - 2m^i H) )
                 let Ci_minus_mi2H = &C[i] - &mi2_H;
                 let P = vartime::k_fold_scalar_mult(&[s_2[i],       -&e_1[i]],
@@ -271,7 +269,7 @@ impl RangeProof {
                 R[i] = &C[i] * &e_2[i];
             } else if v[i] == 2 {
                 // Commitment to i-th digit is r^i G + 2 * m^i H
-                r[i] = Scalar::random(&mut rng);
+                r[i] = Scalar::random(&mut csprng);
                 C[i] = &(G * &r[i]) + &mi2_H;
                 // Begin at index 2 in the ring, choosing random e_2
                 let P = G * &k[i];
@@ -280,7 +278,7 @@ impl RangeProof {
                 R[i] = &C[i] * &e_2[i];
             } else {
                 panic!(); /* invalid digit */
-            } 
+            }
 
             // Set mi_H <- m * mi_H so that mi_H = m^i H in the loop
             mi_H = &mi2_H + &mi_H;
@@ -297,11 +295,11 @@ impl RangeProof {
         for i in 0..RANGEPROOF_N {
             let mi2_H = &mi_H + &mi_H;
             if v[i] == 0 {
-                let k_1 = Scalar::random(&mut rng);
+                let k_1 = Scalar::random(&mut csprng);
                 let P = vartime::k_fold_scalar_mult(&[k_1, e_0], &[G.basepoint(), mi_H]);
                 e_1[i] = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
 
-                let k_2 = Scalar::random(&mut rng);
+                let k_2 = Scalar::random(&mut csprng);
                 let P = vartime::k_fold_scalar_mult(&[k_2, e_1[i]], &[G.basepoint(), mi2_H]);
                 e_2[i] = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
 
@@ -313,8 +311,8 @@ impl RangeProof {
                 s_2[i] = &k_2 + &(&e_1[i] * &(&k[i] * &e_2_inv));
             } else if v[i] == 1 {
                 s_1[i] = Scalar::multiply_add(&e_0, &r[i], &k[i]);
-            } else if v[i] == 2 { 
-                s_1[i] = Scalar::random(&mut rng);
+            } else if v[i] == 2 {
+                s_1[i] = Scalar::random(&mut csprng);
                 // Compute e_1^i = Hash(s_1^i G - e_0^i (C^i - 1 m^i H) )
                 let Ci_minus_miH = &C[i] - &mi_H;
                 let P = vartime::k_fold_scalar_mult(&[s_1[i],        -&e_0],
@@ -325,7 +323,7 @@ impl RangeProof {
             // Set mi_H <-- 3*m_iH, so that mi_H is always 3^i * H in the loop
             mi_H = &mi_H + &mi2_H;
         }
-    
+
         let mut r_sum = Scalar::zero();
         for i in 0..RANGEPROOF_N {
             r_sum += &r[i];
