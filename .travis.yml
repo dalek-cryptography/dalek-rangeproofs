@@ -1,0 +1,21 @@
+language: rust
+
+rust:
+  - stable
+  - beta
+  - nightly
+
+env:
+  - TEST_COMMAND=test FEATURES=''
+  - TEST_COMMAND=bench FEATURES='bench'
+  - TEST_COMMAND=build FEATURES='no-std'
+
+matrix:
+  exclude:
+    - rust: stable
+      env: TEST_COMMAND=bench FEATURES='bench'
+    - rust: beta
+      env: TEST_COMMAND=bench FEATURES='bench'
+
+script:
+  - cargo $TEST_COMMAND --features="$FEATURES"
