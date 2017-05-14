@@ -506,7 +506,7 @@ impl RangeProof {
     }
 }
 
-pub fn base3_digits(mut x: u64) -> [u8; 41] {
+fn base3_digits(mut x: u64) -> [u8; 41] {
     let mut digits = [0u8; 41];
     for i in 0..41 {
         let rem = x % 3;
