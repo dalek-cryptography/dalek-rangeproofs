@@ -205,7 +205,25 @@ impl RangeProof {
         }
     }
 
-    /// Construct a rangeproof for `value` in variable time.
+    /// Construct a rangeproof for `value`, in variable time.
+    ///
+    /// # Inputs
+    ///
+    /// * The `value` to prove within range, a `u64`;
+    /// * `G`, a `DecafBasepointTable`, a table of precomputed multiples of a
+    ///   distinguished basepoint;
+    /// * `H`, a `DecafBasepointTable`, a table of precomputed multiples of a
+    ///   distinguished basepoint;
+    /// * `csprnng`, an implementation of `rand::Rng`, a cryptographically-secure
+    ///   pseudorandom number generator.
+    ///
+    /// # Returns
+    ///
+    /// An `Option<(RangeProof, Scalar)>` where the `RangeProof` contains the
+    /// commitment value, `C`, as well as other intermediary calculations which
+    /// should be relayed to the verifier.  The `Scalar` is the blinding factor
+    /// for the opening to the commitment `C`, so the entire opening is the
+    /// tuple `(value, Scalar)`.
     pub fn create_vartime(value: u64,
                           G: &DecafBasepointTable,
                           H: &DecafBasepointTable,
