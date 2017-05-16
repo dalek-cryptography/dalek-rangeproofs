@@ -112,7 +112,7 @@
 //! # let (proof, commitment, blinding)
 //! #     = RangeProof::create(25, value, G, &H, &mut csprng).unwrap();
 //! 
-//! let proof_bytes: Vec<u8> = serde_cbor::to_vec(&proof).unwrap();
+//! let proof_bytes: Vec<u8> = serde_cbor::ser::to_vec_packed(&proof).unwrap();
 //! # }
 //! ```
 //!
