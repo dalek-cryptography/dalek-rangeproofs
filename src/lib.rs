@@ -14,6 +14,10 @@
 //! ["Confidential Assets" (2017) by Poelstra, Back, Friedenbach, Maxwell,
 //! Wuille](https://blockstream.com/bitcoin17-final41.pdf).
 //!
+//! The scheme is instantiated using the Decaf group on Curve25519, as
+//! implemented in
+//! [`curve25519-dalek`](https://github.com/isislovecruft/curve25519-dalek).
+//!
 //! This implementation hardcodes the ring size `m = 3`, as this is
 //! the most efficient choice.  The number of rings `n` determines the
 //! range `[0,3^n]`, as well as the size and speed of the proof.
