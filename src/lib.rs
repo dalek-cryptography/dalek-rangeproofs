@@ -153,6 +153,7 @@ use rand::Rng;
 use sha2::Sha512;
 use sha2::Digest;
 
+// XXX rewrite curve25519_dalek to have nicer imports.
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::curve::{Identity};
 use curve25519_dalek::decaf::{DecafPoint, DecafBasepointTable};
