@@ -14,6 +14,9 @@
 //! ["Confidential Assets" (2017) by Poelstra, Back, Friedenbach, Maxwell,
 //! Wuille](https://blockstream.com/bitcoin17-final41.pdf).
 //!
+//! This implementation hardcodes the ring size `m = 3`, as this is
+//! the most efficient choice.
+//!
 //! # Examples
 //!
 //! To construct a proof that `134492616741` is within `[0,3^RANGEPROOF_N]`,
