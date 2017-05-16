@@ -135,9 +135,6 @@
 //! or the `value` to any other party, unless the prover wishes to reveal
 //! the `value` *not* in zero-knowledge.
 
-#![no_std]
-
-#![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(feature = "bench", feature(test))]
 
 #![allow(non_snake_case)]
@@ -149,10 +146,8 @@ extern crate test;
 extern crate curve25519_dalek;
 extern crate sha2;
 
-#[cfg(feature = "std")]
 extern crate rand;
 
-#[cfg(feature = "std")]
 use rand::Rng;
 
 use sha2::Sha512;

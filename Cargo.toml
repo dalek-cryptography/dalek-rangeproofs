@@ -7,7 +7,7 @@ readme = "README.md"
 license = "CC0-1.0"
 repository = "https://github.com/isislovecruft/dalek-rangeproofs"
 documentation = "https://docs.rs/dalek-rangeproofs"
-categories = ["cryptography", "no-std"]
+categories = ["cryptography"]
 keywords = ["cryptography", "curve25519", "zero-knowledge", "NIZK", "rangeproof"]
 description = "A pure-Rust implementation of a non-interactive zero-knowledge rangeproof scheme."
 exclude = [
@@ -18,7 +18,6 @@ exclude = [
 sha2 = "^0.4"
 
 [dependencies.rand]
-optional = true
 version = "^0.3"
 
 [dependencies.curve25519-dalek]
@@ -29,6 +28,4 @@ version = "^0.6"
 "curve25519-dalek:0.6.0" = { git= 'https://github.com/isislovecruft/curve25519-dalek', branch = 'feature/scalarmult-lhs', features = ["yolocrypto", "nightly"] }
 
 [features]
-default = ["std"]
-std = ["rand"]
 bench = []
