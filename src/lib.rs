@@ -85,13 +85,41 @@
 //! The output is the proof `proof`, as well as `commitment =
 //! blinding*G + value*H`.
 //!
-//! Another party can verify the proof statement `proof` by doing:
+//! We can serialize the proof using [Serde](https://serde.rs).  Here, we use CBOR.
 //!
 //! ```
 //! # extern crate dalek_rangeproofs;
 //! # extern crate curve25519_dalek;
 //! # extern crate rand;
 //! # extern crate sha2;
+//! extern crate serde_cbor;
+//! # fn main() {
+//! # use curve25519_dalek::constants as dalek_constants;
+//! # use curve25519_dalek::decaf::{DecafBasepointTable, DecafPoint};
+//! # use curve25519_dalek::scalar::Scalar;
+//! # use rand::OsRng;
+//! # use sha2::Sha256;
+//! #
+//! # let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
+//! # let H = DecafPoint::hash_from_bytes::<Sha256>(G.basepoint().compress().as_bytes());
+//! # let mut csprng = OsRng::new().unwrap();
+//! # let value = 134492616741;
+//! # use dalek_rangeproofs::RangeProof;
+//! # let (proof, commitment, blinding)
+//! #     = RangeProof::create(25, value, G, &H, &mut csprng).unwrap();
+//! 
+//! let proof_bytes: Vec<u8> = serde_cbor::to_vec(&proof).unwrap();
+//! # }
+//! ```
+//!
+//! Another party can verify the proof statement from `proof_bytes` by doing:
+//!
+//! ```
+//! # extern crate dalek_rangeproofs;
+//! # extern crate curve25519_dalek;
+//! # extern crate rand;
+//! # extern crate sha2;
+//! extern crate serde_cbor;
 //! # fn main() {
 //! # use curve25519_dalek::constants as dalek_constants;
 //! # use curve25519_dalek::decaf::{DecafBasepointTable, DecafPoint};
@@ -106,6 +134,8 @@
 //! use dalek_rangeproofs::RangeProof;
 //! # let (proof, commitment, blinding)
 //! #     = RangeProof::create(25, value, G, &H, &mut csprng).unwrap();
+//! # let proof_bytes: Vec<u8> = serde_cbor::to_vec(&proof).unwrap();
+//! let proof: RangeProof = serde_cbor::from_slice(&proof_bytes).unwrap();
 //!
 //! let C_option = proof.verify(25, G, &H);
 //! assert!(C_option.is_some());
@@ -166,6 +196,9 @@ extern crate sha2;
 
 extern crate rand;
 
+#[macro_use]
+extern crate serde_derive;
+
 use rand::Rng;
 
 use sha2::Sha512;
@@ -186,6 +219,7 @@ use curve25519_dalek::subtle::byte_is_nonzero;
 ///
 /// The size of the proof and the cost of verification are
 /// proportional to `n`.
+#[derive(Serialize, Deserialize)]
 pub struct RangeProof {
     e_0: Scalar,
     C: Vec<DecafPoint>,
