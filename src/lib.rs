@@ -27,7 +27,11 @@
 //!
 //! # Examples
 //!
-//! To construct a proof that `134492616741` is within `[0,3^25]`,
+//! Suppose we want to prove that `134492616741` is within `[0,3^40]`.
+//! Since 3^40 ≅ 0.66 (2^64 ), this is just slightly narrower than the
+//! range of a `u64`.
+//!
+//! To construct a proof that `134492616741` is within `[0,3^40]`,
 //! first choose orthogonal basepoints.  Usually the basepoints would
 //! be set or distributed as system-wide parameters.  Here we choose
 //! `G` to be the Decaf coset containing the ed25519 basepoint and
@@ -113,13 +117,17 @@
 //! # let value = 134492616741;
 //! # use dalek_rangeproofs::RangeProof;
 //! # let (proof, commitment, blinding)
-//! #     = RangeProof::create(25, value, G, &H, &mut csprng).unwrap();
+//! #     = RangeProof::create(40, value, G, &H, &mut csprng).unwrap();
 //! 
 //! let proof_bytes: Vec<u8> = serde_cbor::ser::to_vec_packed(&proof).unwrap();
+//! assert_eq!(proof_bytes.len(), 4125);
 //! # }
 //! ```
 //!
-//! Another party can verify the proof statement from `proof_bytes` by doing:
+//! In this case, the `serde_cbor`-encoded proof statement is
+//! approximately 6.5% larger than the optimal 3872 = 32(1+3*40)
+//! bytes.  Another party can verify the proof statement from
+//! `proof_bytes` by doing:
 //!
 //! ```
 //! # extern crate dalek_rangeproofs;
@@ -140,11 +148,11 @@
 //! # let value = 134492616741;
 //! use dalek_rangeproofs::RangeProof;
 //! # let (proof, commitment, blinding)
-//! #     = RangeProof::create(25, value, G, &H, &mut csprng).unwrap();
+//! #     = RangeProof::create(40, value, G, &H, &mut csprng).unwrap();
 //! # let proof_bytes: Vec<u8> = serde_cbor::to_vec(&proof).unwrap();
 //! let proof: RangeProof = serde_cbor::from_slice(&proof_bytes).unwrap();
 //!
-//! let C_option = proof.verify(25, G, &H);
+//! let C_option = proof.verify(40, G, &H);
 //! assert!(C_option.is_some());
 //!
 //! let C = C_option.unwrap();
@@ -182,8 +190,8 @@
 //! # let value = 134492616741;
 //! # use dalek_rangeproofs::RangeProof;
 //! # let (proof, commitment, blinding)
-//! #     = RangeProof::create(25, value, G, &H, &mut csprng).unwrap();
-//! # let C = proof.verify(25, G, &H).unwrap();
+//! #     = RangeProof::create(40, value, G, &H, &mut csprng).unwrap();
+//! # let C = proof.verify(40, G, &H).unwrap();
 //! let C_hat = &(G * &blinding) + &(&H * &Scalar::from_u64(value));
 //!
 //! assert_eq!(C_hat, C);
