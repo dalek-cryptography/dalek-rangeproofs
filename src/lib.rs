@@ -11,12 +11,15 @@
 // - Henry de Valence <hdevalence@hdevalence.ca>
 
 //! A pure-Rust implementation of the Back-Maxwell rangeproof scheme defined in
-//! ["Confidential Assets" (2017) by Poelstra, Back, Friedenbach, Maxwell,
+//! [_Confidential Assets_ (2017) by Poelstra, Back, Friedenbach, Maxwell,
 //! Wuille](https://blockstream.com/bitcoin17-final41.pdf).
 //!
 //! The scheme is instantiated using the Decaf group on Curve25519, as
 //! implemented in
 //! [`curve25519-dalek`](https://github.com/isislovecruft/curve25519-dalek).
+//! Note that since the Decaf implementation in `curve25519-dalek` is
+//! currently **UNFINISHED, UNREVIEWED, AND EXPERIMENTAL**, so is this
+//! library.
 //!
 //! This implementation hardcodes the ring size `m = 3`, as this is
 //! the most efficient choice.  The number of rings `n` determines the
@@ -82,14 +85,14 @@
 //! use dalek_rangeproofs::RangeProof;
 //!
 //! let (proof, commitment, blinding) =
-//!     RangeProof::create(25, value, G, &H, &mut csprng).unwrap();
+//!     RangeProof::create(40, value, G, &H, &mut csprng).unwrap();
 //! # }
 //! ```
 //!
 //! The output is the proof `proof`, as well as `commitment =
 //! blinding*G + value*H`.
 //!
-//! We can serialize the proof using [Serde](https://serde.rs).  Here, we use CBOR.
+//! We can serialize the proof using [Serde](https://serde.rs).  Here, we use [CBOR](http://cbor.io).
 //!
 //! ```
 //! # extern crate dalek_rangeproofs;
