@@ -15,16 +15,18 @@
 //! Wuille](https://blockstream.com/bitcoin17-final41.pdf).
 //!
 //! This implementation hardcodes the ring size `m = 3`, as this is
-//! the most efficient choice.
+//! the most efficient choice.  The number of rings `n` determines the
+//! range `[0,3^n]`, as well as the size and speed of the proof.
 //!
 //! # Examples
 //!
-//! To construct a proof that `134492616741` is within
-//! `[0,3^RANGEPROOF_N]`, first, construct precomputed tables of the
-//! orthogonal basepoints.  Usually the basepoints would be set or distributed
-//! as system-wide parameters.  Here we choose `G` to be the Decaf
-//! coset containing the ed25519 basepoint and generate the second
-//! basepoint as `H = Hash(G)`.
+//! To construct a proof that `134492616741` is within `[0,3^25]`,
+//! first choose orthogonal basepoints.  Usually the basepoints would
+//! be set or distributed as system-wide parameters.  Here we choose
+//! `G` to be the Decaf coset containing the ed25519 basepoint and
+//! generate the second basepoint as `H = Hash(G)`.  (Technically, `G`
+//! is actually a `DecafBasepointTable`, which implements
+//! `Mul<&Scalar>` using a precomputed table).
 //!
 //! ```
 //! # extern crate curve25519_dalek;
@@ -33,14 +35,11 @@
 //! use sha2::Sha256;
 //!
 //! use curve25519_dalek::constants as dalek_constants;
-//! use curve25519_dalek::decaf::DecafBasepointTable;
+//! use curve25519_dalek::decaf::{DecafBasepointTable, DecafPoint};
 //! use curve25519_dalek::scalar::Scalar;
 //!
-//! let G_table = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
-//! let G = &dalek_constants::DECAF_ED25519_BASEPOINT;
-//! let H_table = DecafBasepointTable::create(
-//!     &DecafPoint::hash_from_bytes::<Sha256>(G.compress().as_bytes())
-//! );
+//! let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
+//! let H = DecafPoint::hash_from_bytes::<Sha256>(G.basepoint().compress().as_bytes());
 //! # }
 //!
 //! ```
@@ -57,7 +56,7 @@
 //! # }
 //! ```
 //!
-//! We can now create the rangeproof and blinding factor, like so:
+//! We can now create the rangeproof, like so:
 //!
 //! ```
 //! # extern crate dalek_rangeproofs;
@@ -66,92 +65,93 @@
 //! # extern crate rand;
 //! # fn main() {
 //! # use curve25519_dalek::constants as dalek_constants;
-//! # use curve25519_dalek::decaf::DecafBasepointTable;
+//! # use curve25519_dalek::decaf::{DecafBasepointTable, DecafPoint};
 //! # use curve25519_dalek::scalar::Scalar;
 //! # use rand::OsRng;
 //! # use sha2::Sha256;
 //! #
-//! # let G_table = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
-//! # let G = &dalek_constants::DECAF_ED25519_BASEPOINT;
-//! # let H_table = DecafBasepointTable::create(
-//! #     &DecafPoint::hash_from_bytes::<Sha256>(G.compress().as_bytes())
-//! # );
+//! # let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
+//! # let H = DecafPoint::hash_from_bytes::<Sha256>(G.basepoint().compress().as_bytes());
 //! #
 //! # let mut csprng = OsRng::new().unwrap();
 //! # let value = 134492616741;
-//!
 //! use dalek_rangeproofs::RangeProof;
 //!
-//! let (proof, blinding) = RangeProof::create(value, G, &H, &mut csprng).unwrap();
+//! let (proof, commitment, blinding) =
+//!     RangeProof::create(25, value, G, &H, &mut csprng).unwrap();
 //! # }
 //! ```
 //!
-//! Another party can verify this `proof` by doing:
+//! The output is the proof `proof`, as well as `commitment =
+//! blinding*G + value*H`.
+//!
+//! Another party can verify the proof statement `proof` by doing:
 //!
 //! ```
 //! # extern crate dalek_rangeproofs;
 //! # extern crate curve25519_dalek;
 //! # extern crate rand;
+//! # extern crate sha2;
 //! # fn main() {
 //! # use curve25519_dalek::constants as dalek_constants;
-//! # use curve25519_dalek::decaf::DecafBasepointTable;
+//! # use curve25519_dalek::decaf::{DecafBasepointTable, DecafPoint};
 //! # use curve25519_dalek::scalar::Scalar;
 //! # use rand::OsRng;
+//! # use sha2::Sha256;
 //! #
 //! # let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
-//! # let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
+//! # let H = DecafPoint::hash_from_bytes::<Sha256>(G.basepoint().compress().as_bytes());
 //! # let mut csprng = OsRng::new().unwrap();
 //! # let value = 134492616741;
-//!
 //! use dalek_rangeproofs::RangeProof;
+//! # let (proof, commitment, blinding)
+//! #     = RangeProof::create(25, value, G, &H, &mut csprng).unwrap();
 //!
-//! # let (proof, blinding) = RangeProof::create(value, G, &H, &mut csprng).unwrap();
-//!
-//! let C_option = proof.verify(G, &H);
+//! let C_option = proof.verify(25, G, &H);
 //! assert!(C_option.is_some());
 //!
 //! let C = C_option.unwrap();
 //! # }
 //! ```
 //!
-//! As we can see above, verifying the `proof` returns an option for
-//! something we've called `C`.  This `C` is a Pedersen commitment to
-//! `value`.  However, without knowing both `blinding` and the actual
-//! `value`, the verifier cannot open this commitment, because Pedersen
-//! commitments are computationally binding and perfectly hiding (in
-//! addition to being additively homomorphic, a feature used within this
-//! scheme).
+//! If the proof is well-formed, `verify` returns the commitment to
+//! the value.  Since the commitment is the output of the
+//! verification, the verifier is assured it opens to a value in the
+//! range `[0,3^n]`. However, without knowing both `blinding` and the
+//! actual `value`, the verifier cannot open this commitment, because
+//! Pedersen commitments are computationally binding and perfectly
+//! hiding (in addition to being additively homomorphic, a feature
+//! used within this scheme).
 //!
-//! To open this commitment, one would do:
+//! Later, to open this commitment, the prover could reveal the value
+//! and the blinding, allowing others to check that `commitment =
+//! blinding*G + value*H`.
 //!
 //! ```
 //! # extern crate dalek_rangeproofs;
 //! # extern crate curve25519_dalek;
 //! # extern crate rand;
+//! # extern crate sha2;
 //! # fn main() {
 //! # use curve25519_dalek::constants as dalek_constants;
-//! # use curve25519_dalek::decaf::DecafBasepointTable;
+//! # use curve25519_dalek::decaf::{DecafBasepointTable, DecafPoint};
 //! # use curve25519_dalek::scalar::Scalar;
 //! # use rand::OsRng;
-//! #
-//! # use dalek_rangeproofs::RangeProof;
+//! # use sha2::Sha256;
 //! #
 //! # let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
-//! # let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
+//! # let H = DecafPoint::hash_from_bytes::<Sha256>(G.basepoint().compress().as_bytes());
 //! # let mut csprng = OsRng::new().unwrap();
 //! # let value = 134492616741;
-//! #
-//! # let (proof, blinding) = RangeProof::create(value, G, &H, &mut csprng).unwrap();
-//! # let C_option = proof.verify(G, &H);
-//! # let C = C_option.unwrap();
+//! # use dalek_rangeproofs::RangeProof;
+//! # let (proof, commitment, blinding)
+//! #     = RangeProof::create(25, value, G, &H, &mut csprng).unwrap();
+//! # let C = proof.verify(25, G, &H).unwrap();
 //! let C_hat = &(G * &blinding) + &(&H * &Scalar::from_u64(value));
-//! assert_eq!(C.compress(), C_hat.compress());
+//!
+//! assert_eq!(C_hat, C);
 //! # }
 //! ```
-//!
-//! However, obviously, the prover should *not* give either the `blinding`
-//! or the `value` to any other party, unless the prover wishes to reveal
-//! the `value` *not* in zero-knowledge.
 
 #![cfg_attr(feature = "bench", feature(test))]
 
@@ -180,34 +180,54 @@ use curve25519_dalek::subtle::CTAssignable;
 use curve25519_dalek::subtle::bytes_equal_ct;
 use curve25519_dalek::subtle::byte_is_nonzero;
 
-/// A Back-Maxwell rangeproof has size O(m^n) where `m` is the base
-/// and `n` is the number of bits of the maximum number in range,
-/// w.r.t. that base.  Due to the ring signatures used, it is most
-/// efficient to take `m = 3`.  Therefore, to construct a proof valid
-/// for any `u64` value, m^n must be greater than 2^{64}, thus `n = 40`.
-pub const RANGEPROOF_N: usize = 40;
-
-/// A Back-Maxwell rangeproof
+/// A Back-Maxwell rangeproof, which proves in zero knowledge that a
+/// number is in a range `[0,m^n]`.  We hardcode `m = 3` as this is
+/// the most efficient.
+///
+/// The size of the proof and the cost of verification are
+/// proportional to `n`.
 pub struct RangeProof {
     e_0: Scalar,
-    C: [DecafPoint; RANGEPROOF_N],
-    s_1: [Scalar; RANGEPROOF_N],
-    s_2: [Scalar; RANGEPROOF_N],
+    C: Vec<DecafPoint>,
+    s_1: Vec<Scalar>,
+    s_2: Vec<Scalar>,
 }
+
+/// The maximum allowed bound for the rangeproof.  Currently this is
+/// set to 41, because we only implement conversion to base 3 digits
+/// for `u64`s, and 3^41 is the least power of 3 greater than `2^64`.
+pub const RANGEPROOF_MAX_N: usize = 41;
 
 impl RangeProof {
     /// Verify the rangeproof, returning a Pedersen commitment to the
     /// in-range value if successful.
-    pub fn verify(&self,
-                  G: &DecafBasepointTable,
-                  H: &DecafBasepointTable)
-                  -> Option<DecafPoint> {
+    pub fn verify(
+        &self,
+        n: usize,
+        G: &DecafBasepointTable,
+        H: &DecafPoint,
+    ) -> Option<DecafPoint> {
+        // Calling verify with n out of bounds is a programming error.
+        if n > RANGEPROOF_MAX_N {
+            panic!("Error: called create_vartime with too large bound 3^n, n = {}", n);
+        }
+        
+        // If the lengths of any of the arrays don't match, the proof
+        // is malformed.
+        if n != self.C.len() {
+            return None;
+        } else if n != self.s_1.len() {
+            return None;
+        } else if n != self.s_2.len() {
+            return None;
+        }
+        
         let mut e_0_hash = Sha512::default();
         let mut C = DecafPoint::identity();
+        // mi_H = m^i * H = 3^i * H in the loop below
+        let mut mi_H = *H;
 
-        let mut mi_H = H.basepoint();
-
-        for i in 0..RANGEPROOF_N {
+        for i in 0..n {
             let mi2_H = &mi_H + &mi_H;
 
             let Ci_minus_miH = &self.C[i] - &mi_H;
@@ -241,43 +261,49 @@ impl RangeProof {
     ///
     /// # Inputs
     ///
-    /// * The `value` to prove within range, a `u64`;
-    /// * `G`, a `DecafBasepointTable`, a table of precomputed multiples of a
-    ///   distinguished basepoint;
-    /// * `H`, a `DecafBasepointTable`, a table of precomputed multiples of a
-    ///   distinguished basepoint;
-    /// * `csprnng`, an implementation of `rand::Rng`, a cryptographically-secure
-    ///   pseudorandom number generator.
+    /// * `n`, so that the range is `[0,3^n]` with `n < RANGEPROOF_MAX_N`;
+    /// * The `value` to prove within range `[0,3^n]`;
+    /// * `csprng`, an implementation of `rand::Rng`, which should be
+    /// cryptographically secure.
     ///
     /// # Returns
     ///
-    /// An `Option<(RangeProof, Scalar)>` where the `RangeProof` contains the
-    /// commitment value, `C`, as well as other intermediary calculations which
-    /// should be relayed to the verifier.  The `Scalar` is the blinding factor
-    /// for the opening to the commitment `C`, so the entire opening is the
-    /// tuple `(value, Scalar)`.
-    pub fn create_vartime<T: Rng>(value: u64,
-                                  G: &DecafBasepointTable,
-                                  H: &DecafBasepointTable,
-                                  mut csprng: &mut T) -> Option<(RangeProof, Scalar)> {
-        let v = base3_digits(value);
+    /// If `value` is not in the range `[0,3^n]`, return None.
+    /// 
+    /// If successful, returns `Some((proof, commitment, blinding))`, where:
+    /// `proof` is the rangeproof, and `commitment = blinding*G + value*H`.
+    ///
+    /// Only the `RangeProof` should be sent to the verifier.  The
+    /// commitment and blinding are for the use of the prover.
+    pub fn create_vartime<T: Rng>(
+        n: usize,
+        value: u64,
+        G: &DecafBasepointTable,
+        H: &DecafPoint,
+        mut csprng: &mut T,
+    ) -> Option<(RangeProof, DecafPoint, Scalar)> {
+        // Calling verify with n out of bounds is a programming error.
+        if n > RANGEPROOF_MAX_N {
+            panic!("Error: called create_vartime with too large bound 3^n, n = {}", n);
+        }
 
-        // Check that v is in range: all digits above N should be 0
-        for i in RANGEPROOF_N..41 {
+        // Check that value is in range: all digits above n should be 0
+        let v = base3_digits(value);
+        for i in n..41 {
             if v[i] != 0 { return None; }
         }
 
-        let mut R = [DecafPoint::identity(); RANGEPROOF_N];
-        let mut C = [DecafPoint::identity(); RANGEPROOF_N];
-        let mut k   = [Scalar::zero(); RANGEPROOF_N];
-        let mut r   = [Scalar::zero(); RANGEPROOF_N];
-        let mut s_1 = [Scalar::zero(); RANGEPROOF_N];
-        let mut s_2 = [Scalar::zero(); RANGEPROOF_N];
-        let mut e_1 = [Scalar::zero(); RANGEPROOF_N];
-        let mut e_2 = [Scalar::zero(); RANGEPROOF_N];
+        let mut R = vec![DecafPoint::identity(); n];
+        let mut C = vec![DecafPoint::identity(); n];
+        let mut k   = vec![Scalar::zero(); n];
+        let mut r   = vec![Scalar::zero(); n];
+        let mut s_1 = vec![Scalar::zero(); n];
+        let mut s_2 = vec![Scalar::zero(); n];
+        let mut e_1 = vec![Scalar::zero(); n];
+        let mut e_2 = vec![Scalar::zero(); n];
 
-        let mut mi_H = H.basepoint();
-        for i in 0..RANGEPROOF_N {
+        let mut mi_H = *H;
+        for i in 0..n {
             let mi2_H = &mi_H + &mi_H;
             k[i] = Scalar::random(&mut csprng);
 
@@ -309,22 +335,22 @@ impl RangeProof {
 
                 R[i] = &C[i] * &e_2[i];
             } else {
-                panic!(); /* invalid digit */
+                panic!("Invalid digit {}", v[i]);
             }
 
-            // Set mi_H <- m * mi_H so that mi_H = m^i H in the loop
+            // Set mi_H <- 3 * mi_H so that mi_H = m^i H in the loop
             mi_H = &mi2_H + &mi_H;
         }
 
         // Compute e_0 = Hash( R^0 || ... || R^{n-1} )
         let mut e_0_hash = Sha512::default();
-        for i in 0..RANGEPROOF_N {
+        for i in 0..n {
             e_0_hash.input(R[i].compress().as_bytes());
         }
         let e_0 = Scalar::from_hash(e_0_hash);
 
-        let mut mi_H = H.basepoint();
-        for i in 0..RANGEPROOF_N {
+        let mut mi_H = *H;
+        for i in 0..n {
             let mi2_H = &mi_H + &mi_H;
             if v[i] == 0 {
                 let k_1 = Scalar::random(&mut csprng);
@@ -356,33 +382,44 @@ impl RangeProof {
             mi_H = &mi_H + &mi2_H;
         }
 
-        let mut r_sum = Scalar::zero();
-        for i in 0..RANGEPROOF_N {
-            r_sum += &r[i];
+        let mut blinding = Scalar::zero();
+        let mut commitment = DecafPoint::identity();
+        for i in 0..n {
+            blinding += &r[i];
+            // XXX implement AddAssign for ExtendedPoint
+            commitment = &commitment + &C[i];
         }
 
-        Some((RangeProof{e_0: e_0, C: C, s_1: s_1, s_2: s_2}, r_sum))
+        Some((
+            RangeProof{e_0: e_0, C: C, s_1: s_1, s_2: s_2},
+            commitment,
+            blinding,
+        ))
     }
 
-    /// Construct a rangeproof for `value` in constant time.
+    /// Construct a rangeproof for `value`, in constant time.
+    ///
+    /// This function is roughly three times slower (since `m = 3`) than the
+    /// variable time version, for all values of `n`.
     ///
     /// # Inputs
     ///
-    /// * `value`, a `u64`, the value to prove is within range;
-    /// * `G`, a `DecafBasepointTable`, a table of precomputed multiples of a
-    ///   distinguished basepoint;
-    /// * `H`, a `DecafBasepointTable`, a table of precomputed multiples of a
-    ///   distinguished basepoint;
-    /// * `csprnng`, an implementation of `rand::Rng`, a cryptographically-secure
-    ///   pseudorandom number generator.
+    /// * `n`, so that the range is `[0,3^n]` with `n < RANGEPROOF_MAX_N`;
+    /// * The `value` to prove within range `[0,3^n]`;
+    /// * `csprng`, an implementation of `rand::Rng`, which should be
+    /// cryptographically secure.
     ///
     /// # Returns
     ///
-    /// An `Option<(RangeProof, Scalar)>`.  If the `value` was, in fact, in
-    /// range, returns `Some((RangeProof, Scalar))`.  Otherwise, if the `value`
-    /// is out of range, returns `None` (after doing all the computations).
+    /// If `value` is not in the range `[0,3^n]`, return None.
+    /// 
+    /// If successful, returns `Some((proof, commitment, blinding))`, where:
+    /// `proof` is the rangeproof, and `commitment = blinding*G + value*H`.
     ///
-    /// # Warning
+    /// Only the `RangeProof` should be sent to the verifier.  The
+    /// commitment and blinding are for the use of the prover.
+    ///
+    /// # Note
     ///
     /// Even when passing a deterministic CSPRNG generated with identical seeds,
     /// e.g. two instances of `rand::chacha::ChaChaRng::new_unseeded()`, and
@@ -391,38 +428,38 @@ impl RangeProof {
     /// to be identical.  The values in the eventual proofs will differ, since
     /// this constant time version makes additional calls to the `csprng` which
     /// are thrown away in some conditions.
-    ///
-    /// # Note
-    ///
-    /// This function is roughly three times slower (since `m = 3`) than the
-    /// variable time version, for all values of `n`.
-    ///
-    pub fn create<T: Rng>(value: u64,
-                          G: &DecafBasepointTable,
-                          H: &DecafBasepointTable,
-                          mut csprng: &mut T) -> Option<(RangeProof, Scalar)> {
+    pub fn create<T: Rng>(
+        n: usize,
+        value: u64,
+        G: &DecafBasepointTable,
+        H: &DecafPoint,
+        mut csprng: &mut T,
+    ) -> Option<(RangeProof, DecafPoint, Scalar)> {
+        // Calling verify with n out of bounds is a programming error.
+        if n > RANGEPROOF_MAX_N {
+            panic!("Error: called create_vartime with too large bound 3^n, n = {}", n);
+        }
 
-        let v: [u8; 41] = base3_digits(value);
+        // Check that value is in range: all digits above N should be 0
+        let v = base3_digits(value);
         let mut err: u8 = 0;
-
-        // Check that v is in range: all digits above N should be 0
-        for i in RANGEPROOF_N .. 41 {
+        for i in n..41 {
             err ^= v[i];
         }
 
-        let mut R = [DecafPoint::identity(); RANGEPROOF_N];
-        let mut C = [DecafPoint::identity(); RANGEPROOF_N];
-        let mut k   = [Scalar::zero(); RANGEPROOF_N];
-        let mut r   = [Scalar::zero(); RANGEPROOF_N];
-        let mut s_1 = [Scalar::zero(); RANGEPROOF_N];
-        let mut s_2 = [Scalar::zero(); RANGEPROOF_N];
-        let mut e_1 = [Scalar::zero(); RANGEPROOF_N];
-        let mut e_2 = [Scalar::zero(); RANGEPROOF_N];
+        let mut R = vec![DecafPoint::identity(); n];
+        let mut C = vec![DecafPoint::identity(); n];
+        let mut k   = vec![Scalar::zero(); n];
+        let mut r   = vec![Scalar::zero(); n];
+        let mut s_1 = vec![Scalar::zero(); n];
+        let mut s_2 = vec![Scalar::zero(); n];
+        let mut e_1 = vec![Scalar::zero(); n];
+        let mut e_2 = vec![Scalar::zero(); n];
 
-        let mut mi_H: DecafPoint = H.basepoint();
-        let mut P:    DecafPoint;
+        let mut mi_H = *H;
+        let mut P: DecafPoint;
 
-        for i in 0 .. RANGEPROOF_N {
+        for i in 0..n {
             debug_assert!(v[i] == 0 || v[i] == 1 || v[i] == 2);
 
             let mi2_H: DecafPoint = &mi_H + &mi_H;
@@ -442,7 +479,7 @@ impl RangeProof {
             P = &k[i] * G;
 
             // Begin at index 1 in the ring, choosing random e_{v^i}
-            let mut maybe_ei: Scalar = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
+            let mut maybe_ei = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
             e_1[i].conditional_assign(&maybe_ei, bytes_equal_ct(v[i], 1u8));
             e_2[i].conditional_assign(&maybe_ei, bytes_equal_ct(v[i], 2u8));
 
@@ -451,8 +488,7 @@ impl RangeProof {
             s_2[i].conditional_assign(&maybe_s2, bytes_equal_ct(v[i], 1u8));
 
             // Compute e_2 = Hash(s_2^i G - e_1^i (C^i - 2m^i H) )
-            // XXX wtf how the fuck do we get rid of this &(-(&e_1[i])) fuckery
-            P = &(&s_2[i] * &G.basepoint()) + &(&(-(&e_1[i])) * &(&C[i] - &mi2_H));
+            P = &(&s_2[i] * G) - &(&e_1[i] * &(&C[i] - &mi2_H));
             maybe_ei = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
             e_2[i].conditional_assign(&maybe_ei, bytes_equal_ct(v[i], 1u8));
 
@@ -469,14 +505,14 @@ impl RangeProof {
 
         // Compute e_0 = Hash( R^0 || ... || R^{n-1} )
         let mut e_0_hash = Sha512::default();
-        for i in 0 .. RANGEPROOF_N {
+        for i in 0..n {
             e_0_hash.input(R[i].compress().as_bytes());  // XXX new digest API for 0.5.x
         }
         let e_0 = Scalar::from_hash(e_0_hash);
 
-        let mut mi_H = H.basepoint();
+        let mut mi_H = *H;
 
-        for i in 0 .. RANGEPROOF_N {
+        for i in 0..n {
             debug_assert!(v[i] == 0 || v[i] == 1 || v[i] == 2);
 
             let mi2_H = &mi_H + &mi_H;
@@ -514,8 +550,7 @@ impl RangeProof {
             // Compute e_1^i = Hash(s_1^i G - e_0^i (C^i - 1 m^i H) )
             let Ci_minus_miH = &C[i] - &mi_H;  // XXX only used in v[i]==2, check optimiser
 
-            // XXX wtf how the fuck do we get rid of this &(-(&e_0)) fuckery
-            P = &(&s_1[i] * &G.basepoint()) + &(&(-(&e_0)) * &Ci_minus_miH);
+            P = &(&s_1[i] * &G.basepoint()) - &(&e_0 * &Ci_minus_miH);
             let maybe_e_1 = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
             e_1[i].conditional_assign(&maybe_e_1, bytes_equal_ct(v[i], 2u8));
 
@@ -528,13 +563,20 @@ impl RangeProof {
             mi_H = &mi_H + &mi2_H;
         }
 
-        let mut r_sum = Scalar::zero();
-        for i in 0 .. RANGEPROOF_N {
-            r_sum += &r[i];
+        let mut blinding = Scalar::zero();
+        let mut commitment = DecafPoint::identity();
+        for i in 0..n {
+            blinding += &r[i];
+            // XXX implement AddAssign for ExtendedPoint
+            commitment = &commitment + &C[i];
         }
 
         if byte_is_nonzero(err) == 0u8 {  // XXX
-            return Some((RangeProof{ e_0: e_0, C: C, s_1: s_1, s_2: s_2}, r_sum));
+            return Some((
+                RangeProof{ e_0: e_0, C: C, s_1: s_1, s_2: s_2},
+                commitment,
+                blinding,
+            ))
         } else {
             return None;
         }
@@ -556,6 +598,7 @@ mod tests {
     use super::*;
 
     use rand::OsRng;
+    use sha2::Sha256;
 
     use curve25519_dalek::constants as dalek_constants;
 
@@ -590,39 +633,49 @@ mod tests {
     #[test]
     fn prove_and_verify_vartime() {
         let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
-        let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
+        let H = DecafPoint::hash_from_bytes::<Sha256>(G.basepoint().compress().as_bytes());
 
         let mut csprng = OsRng::new().unwrap();
 
-        let value = 134492616741;
-        let (proof, blinding) = RangeProof::create_vartime(value, G, &H, &mut csprng).unwrap();
+        let n = 16;
+        let value = 13449261;
+        let (proof, commitment, blinding) =
+            RangeProof::create_vartime(n, value, G, &H, &mut csprng).unwrap();
 
-        let C_option = proof.verify(G, &H);
+        let C_option = proof.verify(n, G, &H);
         assert!(C_option.is_some());
+
+        assert!(proof.verify(2, G, &H).is_none());
 
         let C = C_option.unwrap();
         let C_hat = &(G * &blinding) + &(&H * &Scalar::from_u64(value));
 
         assert_eq!(C.compress(), C_hat.compress());
+        assert_eq!(commitment.compress(), C_hat.compress());
     }
 
     #[test]
     fn prove_and_verify_ct() {
         let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
-        let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
+        let H = DecafPoint::hash_from_bytes::<Sha256>(G.basepoint().compress().as_bytes());
 
         let mut csprng = OsRng::new().unwrap();
 
-        let value = 134492616741;
-        let (proof, blinding) = RangeProof::create(value, G, &H, &mut csprng).unwrap();
+        let n = 16;
+        let value = 13449261;
+        let (proof, commitment, blinding) =
+            RangeProof::create(n, value, G, &H, &mut csprng).unwrap();
 
-        let C_option = proof.verify(G, &H);
+        let C_option = proof.verify(n, G, &H);
         assert!(C_option.is_some());
+
+        assert!(proof.verify(2, G, &H).is_none());
 
         let C = C_option.unwrap();
         let C_hat = &(G * &blinding) + &(&H * &Scalar::from_u64(value));
 
         assert_eq!(C.compress(), C_hat.compress());
+        assert_eq!(commitment.compress(), C_hat.compress());
     }
 }
 
@@ -632,41 +685,43 @@ mod bench {
     use super::*;
 
     use rand::OsRng;
+    use sha2::Sha256;
     use curve25519_dalek::constants as dalek_constants;
 
     #[bench]
     fn verify(b: &mut Bencher) {
         let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
-        let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
+        let H = DecafPoint::hash_from_bytes::<Sha256>(G.basepoint().compress().as_bytes());
 
         let mut csprng = OsRng::new().unwrap();
 
-        let value = 0;
-        let (proof, _) = RangeProof::create_vartime(value, G, &H, &mut csprng).unwrap();
+        let value = 1666;
+        let (proof, _, _) = RangeProof::create_vartime(
+            RANGEPROOF_MAX_N, value, G, &H, &mut csprng).unwrap();
 
-        b.iter(|| proof.verify(G, &H));
+        b.iter(|| proof.verify(RANGEPROOF_MAX_N, G, &H));
     }
 
     #[bench]
     fn prove_vartime(b: &mut Bencher) {
         let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
-        let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
+        let H = DecafPoint::hash_from_bytes::<Sha256>(G.basepoint().compress().as_bytes());
 
         let mut csprng = OsRng::new().unwrap();
 
         let value = 1666;
-        b.iter(|| RangeProof::create_vartime(value, G, &H, &mut csprng));
+        b.iter(|| RangeProof::create_vartime(RANGEPROOF_MAX_N, value, G, &H, &mut csprng));
     }
 
     #[bench]
     fn prove_ct(b: &mut Bencher) {
         let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
-        let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
+        let H = DecafPoint::hash_from_bytes::<Sha256>(G.basepoint().compress().as_bytes());
 
         let mut csprng = OsRng::new().unwrap();
 
         let value = 1666;
-        b.iter(|| RangeProof::create(value, G, &H, &mut csprng));
+        b.iter(|| RangeProof::create(RANGEPROOF_MAX_N, value, G, &H, &mut csprng));
     }
 
     #[bench]
