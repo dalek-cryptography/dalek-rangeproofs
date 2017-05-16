@@ -19,19 +19,28 @@
 //!
 //! # Examples
 //!
-//! To construct a proof that `134492616741` is within `[0,3^RANGEPROOF_N]`,
-//! first, select your basepoints (usually this will be set or distributed
-//! within some system-wide parameters):
+//! To construct a proof that `134492616741` is within
+//! `[0,3^RANGEPROOF_N]`, first, construct precomputed tables of the
+//! orthogonal basepoints.  Usually the basepoints would be set or distributed
+//! as system-wide parameters.  Here we choose `G` to be the Decaf
+//! coset containing the ed25519 basepoint and generate the second
+//! basepoint as `H = Hash(G)`.
 //!
 //! ```
 //! # extern crate curve25519_dalek;
+//! # extern crate sha2;
 //! # fn main() {
+//! use sha2::Sha256;
+//!
 //! use curve25519_dalek::constants as dalek_constants;
 //! use curve25519_dalek::decaf::DecafBasepointTable;
 //! use curve25519_dalek::scalar::Scalar;
 //!
-//! let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
-//! let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
+//! let G_table = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
+//! let G = &dalek_constants::DECAF_ED25519_BASEPOINT;
+//! let H_table = DecafBasepointTable::create(
+//!     &DecafPoint::hash_from_bytes::<Sha256>(G.compress().as_bytes())
+//! );
 //! # }
 //!
 //! ```
@@ -53,15 +62,21 @@
 //! ```
 //! # extern crate dalek_rangeproofs;
 //! # extern crate curve25519_dalek;
+//! # extern crate sha2;
 //! # extern crate rand;
 //! # fn main() {
 //! # use curve25519_dalek::constants as dalek_constants;
 //! # use curve25519_dalek::decaf::DecafBasepointTable;
 //! # use curve25519_dalek::scalar::Scalar;
 //! # use rand::OsRng;
+//! # use sha2::Sha256;
 //! #
-//! # let G = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
-//! # let H = DecafBasepointTable::create(&(G * &Scalar::from_u64(10352669767914021650)));
+//! # let G_table = &dalek_constants::DECAF_ED25519_BASEPOINT_TABLE;
+//! # let G = &dalek_constants::DECAF_ED25519_BASEPOINT;
+//! # let H_table = DecafBasepointTable::create(
+//! #     &DecafPoint::hash_from_bytes::<Sha256>(G.compress().as_bytes())
+//! # );
+//! #
 //! # let mut csprng = OsRng::new().unwrap();
 //! # let value = 134492616741;
 //!
