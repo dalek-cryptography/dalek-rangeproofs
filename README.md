@@ -38,10 +38,7 @@ Benchmarks may be taken with:
 
 # Pre-Release TODOs
 
-* serde support for rangeproof serialisation
-* rangeproof size as a run-time parameter, not compile-time
-* `Vec`s for RangeProof internals
-* move RangeProof code to back_maxwell.rs module
+* move RangeProof code to `back_maxwell.rs` module
 * double check documentation
 * double check code
 * don't use any yolocrypto features (i.e. stabilise decaf in curve25519-dalek)
