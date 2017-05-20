@@ -31,10 +31,7 @@ version = "0.6"
 
 [dependencies.curve25519-dalek]
 features = ["yolocrypto", "serde", "nightly"]
-version = "^0.7"
-
-[replace]
-"curve25519-dalek:0.7.1" = { git= 'https://github.com/hdevalence/curve25519-dalek', branch = 'develop', features = ["yolocrypto", "serde", "nightly"] }
+version = "^0.8"
 
 [features]
 bench = []
