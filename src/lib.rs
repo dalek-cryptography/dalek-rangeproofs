@@ -319,7 +319,7 @@ impl RangeProof {
     ///
     /// If `value` is not in the range `[0,3^n]`, return None.
     /// 
-    /// If successful, returns `Some((proof, commitment, blinding))`, where:
+    /// Otherwise, returns `Some((proof, commitment, blinding))`, where:
     /// `proof` is the rangeproof, and `commitment = blinding*G + value*H`.
     ///
     /// Only the `RangeProof` should be sent to the verifier.  The
@@ -461,8 +461,12 @@ impl RangeProof {
     /// # Returns
     ///
     /// If `value` is not in the range `[0,3^n]`, return None.
+    ///
+    /// Note that this function is designed to execute in constant
+    /// time for all *valid* inputs.  Passing an out-of-range `value`
+    /// will cause it to return `None` early.
     /// 
-    /// If successful, returns `Some((proof, commitment, blinding))`, where:
+    /// Otherwise, returns `Some((proof, commitment, blinding))`, where:
     /// `proof` is the rangeproof, and `commitment = blinding*G + value*H`.
     ///
     /// Only the `RangeProof` should be sent to the verifier.  The
@@ -491,9 +495,8 @@ impl RangeProof {
 
         // Check that value is in range: all digits above N should be 0
         let v = base3_digits(value);
-        let mut err: u8 = 0;
         for i in n..41 {
-            err ^= v[i];
+            if v[i] != 0 { return None; }
         }
 
         let mut R = vec![DecafPoint::identity(); n];
@@ -620,15 +623,11 @@ impl RangeProof {
             commitment = &commitment + &C[i];
         }
 
-        if byte_is_nonzero(err) == 0u8 {  // XXX
-            return Some((
-                RangeProof{ e_0: e_0, C: C, s_1: s_1, s_2: s_2},
-                commitment,
-                blinding,
-            ))
-        } else {
-            return None;
-        }
+        Some((
+            RangeProof{ e_0: e_0, C: C, s_1: s_1, s_2: s_2},
+            commitment,
+            blinding,
+        ))
     }
 }
 
