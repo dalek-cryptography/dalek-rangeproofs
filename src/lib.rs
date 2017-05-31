@@ -592,7 +592,8 @@ impl RangeProof {
             let maybe_C_i = G * &r[i];
             C[i].conditional_assign(&maybe_C_i, bytes_equal_ct(v[i], 0u8));
 
-            let mut maybe_s_1 = &k_1 + &(&e_0 * &(&k[i] * &e_2_inv));  // XXX reuse k[i] * e_2_inv
+            let ki_e_2_inv = &k[i] * &e_2_inv;
+            let mut maybe_s_1 = &k_1 + &(&e_0 * &ki_e_2_inv);
             s_1[i].conditional_assign(&maybe_s_1, bytes_equal_ct(v[i], 0u8));
             maybe_s_1 = Scalar::multiply_add(&e_0, &r[i], &k[i]);
             s_1[i].conditional_assign(&maybe_s_1, bytes_equal_ct(v[i], 1u8));
@@ -606,7 +607,7 @@ impl RangeProof {
             let maybe_e_1 = Scalar::hash_from_bytes::<Sha512>(P.compress().as_bytes());
             e_1[i].conditional_assign(&maybe_e_1, bytes_equal_ct(v[i], 2u8));
 
-            let mut maybe_s_2 = &k_2 + &(&e_1[i] * &(&k[i] * &e_2_inv));  // XXX reuse k[i] * e_2_inv
+            let mut maybe_s_2 = &k_2 + &(&e_1[i] * &ki_e_2_inv);
             s_2[i].conditional_assign(&maybe_s_2, bytes_equal_ct(v[i], 0u8));
             maybe_s_2 = Scalar::multiply_add(&e_1[i], &r[i], &k[i]);
             s_2[i].conditional_assign(&maybe_s_2, bytes_equal_ct(v[i], 2u8));
