@@ -1,7 +1,11 @@
 # dalek-rangeproofs
 
+This repo **was**:
+
 A pure-Rust implementation of the Back-Maxwell rangeproof scheme defined in
 ["Confidential Assets" (2017) by Poelstra, Back, Friedenbach, Maxwell, Wuille](https://blockstream.com/bitcoin17-final41.pdf).
+
+**THIS IS A PROOF-OF-CONCEPT OF A SCHEME WHICH IS NOW OBSOLETE, USE BULLETPROOFS**
 
 ## Warning
 
